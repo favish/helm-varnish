@@ -1,0 +1,77 @@
+# Stateful sets provide podName-podNumber.serviceName.cluster.local dns resolution
+# The service at the bottom here provides this
+# https://kubernetes.io/docs/concepts/services-networking/service/#headless-services
+
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: varnish
+spec:
+  serviceName: "varnish-internal"
+  replicas: {{ .Values.replicas }}
+  selector:
+    matchLabels:
+      service: "varnish"
+  template:
+    metadata:
+      annotations:
+        prometheus.io.scrape: "true"
+        prometheus.io.port: "9131"
+      labels:
+        service: "varnish"
+    spec:
+      terminationGracePeriodSeconds: 5
+      initContainers:
+      # These two containers do some system level performance tuning
+      # One requires the host-sys volume defined below
+      - image: "alpine"
+        name: "adjust-sysctl"
+        securityContext:
+          privileged: true
+        command:
+        - "/bin/sh"
+        - "-c"
+        - "sysctl -w net.core.somaxconn=4096 && sysctl -w net.ipv4.ip_local_port_range='1024 65535'"
+      - name: "disable-thp"
+        image: "alpine"
+        volumeMounts:
+          - name: "host-sys"
+            mountPath: "/host-sys"
+        securityContext:
+          privileged: true
+        command:
+          - "sh"
+          - "-c"
+          - "echo madvise >/host-sys/kernel/mm/transparent_hugepage/enabled && echo madvise >/host-sys/kernel/mm/transparent_hugepage/defrag"
+      containers:
+      - name: "varnish"
+        image: "{{.Values.image.repository}}:{{.Values.image.tag}}"
+        resources:
+{{ toYaml .Values.resources | indent 10 }}
+        env:
+          - name: "ENABLE_PROMETHEUS_EXPORTER"
+            value: "true"
+          - name: "VARNISH_MALLOC"
+            value: {{ .Values.malloc }}
+          - name: "TERM"
+            value: "xterm"
+        volumeMounts:
+          - name: "secret"
+            mountPath: "/etc/varnish/secret"
+            subPath: "secret"
+          - name: "config"
+            mountPath: "/etc/varnish/default.vcl"
+            subPath: "default.vcl"
+        ports:
+          - containerPort: 80
+          - containerPort: 9131
+      volumes:
+      - name: "host-sys"
+        hostPath:
+          path: "/sys"
+      - name: "secret"
+        secret:
+          secretName: "varnish-secret"
+      - name: "config"
+        configMap:
+          name: {{ .Values.configMapName }}

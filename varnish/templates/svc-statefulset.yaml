@@ -1,0 +1,18 @@
+# Headless service will create endpoints leading directly to individual pods
+# Needed to access each varnish instance for purging
+# Stateful sets provide podName-podNumber.serviceName.cluster.local dns resolution
+# https://kubernetes.io/docs/concepts/services-networking/service/#headless-services
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: varnish-internal
+  labels:
+    chart: "{{ .Chart.Name }}-{{ .Chart.Version }}"
+spec:
+  ports:
+  - port: 80
+    targetPort: 80
+  clusterIP: "None"
+  selector:
+    service: "varnish"
