@@ -96,23 +96,7 @@ data:
         }
 
         # Pass through any administrative or AJAX-related paths.
-        if (req.url ~ "^/status\.php$" ||
-            req.url ~ "^/update\.php$" ||
-            req.url ~ "^/admin$" ||
-            req.url ~ "^/admin/.*$" ||
-            req.url ~ "^/flag/.*$" ||
-            req.url ~ "^.*/ajax/.*$" ||
-            req.url ~ "^.*/ahah/.*$" ||
-            req.url ~ "/statistics\.php$" ||
-            # Ads.txt sometimes has a Drupal managed redirect rule
-            req.url ~ "/ads.txt" ||
-            # Revive is an OSS ad server we include alongside Drupal in some cases
-            req.url ~ "^/revive/.*$" ||
-            # Sitemap ignores
-            req.url ~ "sitemap" ||
-            req.url ~ "^/arrowchat/.*$" ||
-            req.url ~ "^/system/files/.*$" ||
-            req.url ~ "^/googlenews\.xml$" ) {
+        if (req.url ~ "^/api/.*$") {
                return (pass);
         }
 
