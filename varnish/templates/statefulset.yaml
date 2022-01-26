@@ -46,6 +46,7 @@ spec:
       containers:
       - name: "varnish"
         image: "{{.Values.image.repository}}:{{.Values.image.tag}}"
+        args: ["-p", "http_resp_hdr_len=16k"]
         resources:
 {{ toYaml .Values.resources | indent 10 }}
         env:
