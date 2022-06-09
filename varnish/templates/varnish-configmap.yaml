@@ -265,7 +265,9 @@ data:
           beresp.status == 301 ||
           beresp.status == 302 ||
           beresp.status == 403 ||
-          beresp.status == 404 ) {
+          beresp.status == 404 ||
+          beresp.status == 499 ||
+          beresp.status == 500 ) {
             unset beresp.http.Vary;
             unset beresp.http.Surrogate-control;
             set beresp.uncacheable = false;
