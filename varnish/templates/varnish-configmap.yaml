@@ -6,6 +6,7 @@ data:
   default.vcl: |-
     vcl 4.0;
     import std;
+    import bodyaccess;
 
     # This Varnish VCL has been adapted from the Four Kitchens VCL for Varnish 3.
     # This VCL is for using cache tags with drupal 8. Minor chages of VCL provided by Jeff Geerling.
@@ -17,8 +18,27 @@ data:
         .first_byte_timeout = 30s;
     }
 
+    sub vcl_hash {
+        # To cache POST requests
+        if (req.http.X-Body-Len) {
+            bodyaccess.hash_req_body();
+        }
+    }
+
+    sub vcl_backend_fetch {
+        # check to see if that's POST request
+        # see https://docs.varnish-software.com/tutorials/caching-post-requests/#step-4---make-sure-the-backend-gets-a-post-request
+        if (bereq.http.X-Body-Len) {
+            set bereq.method = "POST";
+        }
+    }
+
     # Respond to incoming requests.
     sub vcl_recv {
+        # by instruction to Add the following to the very top of sub vcl_recv:
+        # see https://docs.varnish-software.com/tutorials/caching-post-requests/#step-2---update-vcl_recv-to-cache-post-requests
+        unset req.http.X-Body-Len;
+
         # Always respond happily to GC healthcheck
         # IT IS VERY IMPORTANT THAT THIS IS AT THE TOP OF EVERYTHING, HEALTHCHECK NEEDS A 200 NOT A 301
         if (req.http.User-Agent ~ "GoogleHC/1.0") {
@@ -53,19 +73,37 @@ data:
         }
 
         if (req.method == "BAN") {
-            if (!req.http.X-Varnish-Purge) {
-              return (synth(405, "Permission denied."));
+            # Only allow BAN requests from internal php pod
+            # unfortunately, we cannot issue ACL due to it just used to match with IP
+            # so has do implement this this way `req.http.host !~ "^(varnish|host2.com|host3.com)$"`.
+            # By logging internal k8s host system.
+            # I found that host is alwasy `varnish` when a request is fired from inside k8s cluster
+
+            if (req.http.host !~ "^(varnish)$") {
+                return (synth(405, "Not allowed."));
             }
-            set req.http.X-Varnish-Purge = std.tolower(req.http.X-Varnish-Purge);
 
             if (req.http.Cache-Tags) {
-                ban("obj.http.X-Varnish-Secret == " + req.http.X-Varnish-Purge + " && obj.http.Cache-Tags ~ " + req.http.Cache-Tags);
+                ban("obj.http.Cache-Tags ~ " + req.http.Cache-Tags);
             }
             else {
                 return (synth(403, "Cache-Tags header missing."));
             }
             # Throw a synthetic page so the request won't go to the backend.
             return (synth(200, "Ban added."));
+        }
+
+        # If it's a POST request for GraphQL, read its body
+        if (req.method == "POST" && req.url == "/graphql" && req.http.content-type ~ "application/json") {
+            # if POST request body is larger than 500kb then pass
+            # 500KB is what varnish suggested
+            # see https://docs.varnish-software.com/tutorials/caching-post-requests/#step-2---update-vcl_recv-to-cache-post-requests
+            if(!std.cache_req_body(500KB)){
+                return(hash);
+            } else {
+                set req.http.X-Body-Len = bodyaccess.len_req_body();
+                return(hash);
+            }
         }
 
         # Only cache GET and HEAD requests (pass through POST requests).
@@ -258,6 +296,19 @@ data:
         # Set ban-lurker friendly custom headers.
         set beresp.http.X-Url = bereq.url;
         set beresp.http.X-Host = bereq.http.host;
+
+        # change Cache Control header for graphql request
+        # see https://stackoverflow.com/a/64832557/1837486
+        if (bereq.method == "POST" && bereq.url == "/graphql" && bereq.http.content-type ~ "application/json") {
+            // avoiding cookies set, if not, cache does not work
+            unset beresp.http.cookie;
+            unset beresp.http.Set-Cookie;
+
+            set beresp.ttl = 1d;
+            set beresp.http.Cache-Control = "public, max-age=86400";
+
+            return (deliver);
+        }
 
         # Cache 403s, 404s, 302s and 301s with a short lifetime to protect the backend.
         # Add a 'Saint-Mode' header for debugging.

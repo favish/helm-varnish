@@ -3,8 +3,8 @@ backend:
   port: 80
 configMapName: default-varnish
 image:
-  repository: "favish/varnish-6-alpine"
-  tag: "1.1.2"
+  repository: "favish/varnish"
+  tag: "2.0.0"
 malloc: 100M
 replicas: 2
 resources:
