@@ -73,24 +73,28 @@ data:
         }
 
         if (req.method == "BAN") {
+            # Check for the presence of a secret key.
+            if (!req.http.X-Varnish-Purge) {
+              return (synth(405, "Permission denied."));
+            }
+            set req.http.X-Varnish-Purge = std.tolower(req.http.X-Varnish-Purge);
+
             # Only allow BAN requests from internal php pod
             # unfortunately, we cannot issue ACL due to it just used to match with IP
             # so has do implement this this way `req.http.host !~ "^(varnish|host2.com|host3.com)$"`.
             # By logging internal k8s host system.
             # I found that host is alwasy `varnish` when a request is fired from inside k8s cluster
-
-            if (req.http.host !~ "^(varnish)$") {
-                return (synth(405, "Not allowed."));
-            }
+            std.log("BAN for: " + req.http.host + req.url);
 
             if (req.http.Cache-Tags) {
-                ban("obj.http.Cache-Tags ~ " + req.http.Cache-Tags);
+                # Ban based on the secret and cache tags.
+                ban("obj.http.X-Varnish-Secret == " + req.http.X-Varnish-Purge + " && obj.http.Cache-Tags ~ " + req.http.Cache-Tags);
+                # Throw a synthetic page so the request won't go to the backend.
+                return (synth(200, "Ban added."));
             }
             else {
                 return (synth(403, "Cache-Tags header missing."));
             }
-            # Throw a synthetic page so the request won't go to the backend.
-            return (synth(200, "Ban added."));
         }
 
         # If it's a POST request for GraphQL, read its body
@@ -99,8 +103,10 @@ data:
             # 500KB is what varnish suggested
             # see https://docs.varnish-software.com/tutorials/caching-post-requests/#step-2---update-vcl_recv-to-cache-post-requests
             if(!std.cache_req_body(500KB)){
+                std.log("Req body size greater than 500KB: " + std.integer(req.http.content-length + "bytes", 0));
                 return(hash);
             } else {
+                std.log("Will cache POST for: " + req.http.host + req.url);
                 set req.http.X-Body-Len = bodyaccess.len_req_body();
                 return(hash);
             }
@@ -293,9 +299,8 @@ data:
 
     # Instruct Varnish what to do in the case of certain backend responses (beresp).
     sub vcl_backend_response {
-        # Set ban-lurker friendly custom headers.
-        set beresp.http.X-Url = bereq.url;
-        set beresp.http.X-Host = bereq.http.host;
+        # Add the secret as a header so that we can later authorize ban requests.
+        set beresp.http.X-Varnish-Secret = {{ .Values.secret | quote }};
 
         # change Cache Control header for graphql request
         # see https://stackoverflow.com/a/64832557/1837486
@@ -309,6 +314,10 @@ data:
 
             return (deliver);
         }
+
+        # Set ban-lurker friendly custom headers.
+        set beresp.http.X-Url = bereq.url;
+        set beresp.http.X-Host = bereq.http.host;
 
         # Cache 403s, 404s, 302s and 301s with a short lifetime to protect the backend.
         # Add a 'Saint-Mode' header for debugging.
