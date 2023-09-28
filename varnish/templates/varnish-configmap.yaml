@@ -77,7 +77,6 @@ data:
             if (!req.http.X-Varnish-Purge) {
               return (synth(405, "Permission denied."));
             }
-            set req.http.X-Varnish-Purge = std.tolower(req.http.X-Varnish-Purge);
 
             # Only allow BAN requests from internal php pod
             # unfortunately, we cannot issue ACL due to it just used to match with IP
