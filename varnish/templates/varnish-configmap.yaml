@@ -314,6 +314,12 @@ data:
             return (deliver);
         }
 
+        # Cache aggregated assets for an hour. This is necessary for 10.1 and onward.
+        if (bereq.url ~ "^/sites/default/assets/") {
+            set beresp.ttl = 1h;
+            set beresp.http.Cache-Control = "public, max-age=3600";
+        }
+
         # Set ban-lurker friendly custom headers.
         set beresp.http.X-Url = bereq.url;
         set beresp.http.X-Host = bereq.http.host;
