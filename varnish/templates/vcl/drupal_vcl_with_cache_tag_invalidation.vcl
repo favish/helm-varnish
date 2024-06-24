@@ -1,0 +1,371 @@
+vcl 4.0;
+    import std;
+    import bodyaccess;
+
+    # This Varnish VCL has been adapted from the Four Kitchens VCL for Varnish 3.
+    # This VCL is for using cache tags with drupal 8. Minor chages of VCL provided by Jeff Geerling.
+
+    # Default backend definition. Points to Nginx, normally.
+    backend default {
+        .host = "{{ .Values.backend.host }}";
+        .port = "{{ .Values.backend.port }}";
+        .first_byte_timeout = 30s;
+    }
+
+    sub vcl_hash {
+        # To cache POST requests
+        if (req.http.X-Body-Len) {
+            bodyaccess.hash_req_body();
+        }
+    }
+
+    sub vcl_backend_fetch {
+        # check to see if that's POST request
+        # see https://docs.varnish-software.com/tutorials/caching-post-requests/#step-4---make-sure-the-backend-gets-a-post-request
+        if (bereq.http.X-Body-Len) {
+            set bereq.method = "POST";
+        }
+    }
+
+    # Respond to incoming requests.
+    sub vcl_recv {
+        # by instruction to Add the following to the very top of sub vcl_recv:
+        # see https://docs.varnish-software.com/tutorials/caching-post-requests/#step-2---update-vcl_recv-to-cache-post-requests
+        unset req.http.X-Body-Len;
+
+        # Always respond happily to GC healthcheck
+        # IT IS VERY IMPORTANT THAT THIS IS AT THE TOP OF EVERYTHING, HEALTHCHECK NEEDS A 200 NOT A 301
+        if (req.http.User-Agent ~ "GoogleHC/1.0") {
+            return (synth(200, "OK"));
+        }
+
+        # Block potential scrapers or known malicious bots
+        if (req.http.User-Agent ~ "(yandexbot|baiduspider|sosospider|HTTrack|Pcore-HTTP)") {
+            return (synth(403, "Forbidden"));
+        }
+
+        # 403 Requests to paths with previous malicious/invalid activity
+        if (
+            req.url ~ "^/images/track/track.gif" ||
+            req.url ~ "cdnjs.cloudflare.com" ||
+            req.url ~ "d.agkn.com" ||
+            req.url ~ "ssp.lkqd.net" ||
+            req.url ~ "^/wp-login" ||
+            req.url ~ "bfmio.com"
+          ) {
+            return (synth(403, "Forbidden"));
+        }
+
+        # Statistics plus module endpoint should not be cached
+        if (req.url ~ "^/statistics-ajax") {
+          unset req.http.cookie;
+        }
+
+        # Implementing websocket support (https://www.varnish-cache.org/docs/4.0/users-guide/vcl-example-websockets.html)
+        if (req.http.Upgrade ~ "(?i)websocket") {
+            return (pipe);
+        }
+
+        if (req.method == "BAN") {
+            # Check for the presence of a secret key.
+            if (!req.http.X-Varnish-Purge) {
+              return (synth(405, "Permission denied."));
+            }
+
+            # Only allow BAN requests from internal php pod
+            # unfortunately, we cannot issue ACL due to it just used to match with IP
+            # so has do implement this this way `req.http.host !~ "^(varnish|host2.com|host3.com)$"`.
+            # By logging internal k8s host system.
+            # I found that host is alwasy `varnish` when a request is fired from inside k8s cluster
+            std.log("BAN for: " + req.http.host + req.url);
+
+            if (req.http.Cache-Tags) {
+                # Ban based on the secret and cache tags.
+                ban("obj.http.X-Varnish-Secret == " + req.http.X-Varnish-Purge + " && obj.http.Cache-Tags ~ " + req.http.Cache-Tags);
+                # Throw a synthetic page so the request won't go to the backend.
+                return (synth(200, "Ban added."));
+            }
+            else {
+                return (synth(403, "Cache-Tags header missing."));
+            }
+        }
+
+        # If it's a POST request for GraphQL, read its body
+        if (req.method == "POST" && req.url == "/graphql" && req.http.content-type ~ "application/json") {
+            # if POST request body is larger than 500kb then pass
+            # 500KB is what varnish suggested
+            # see https://docs.varnish-software.com/tutorials/caching-post-requests/#step-2---update-vcl_recv-to-cache-post-requests
+            if(!std.cache_req_body(500KB)){
+                std.log("Req body size greater than 500KB: " + std.integer(req.http.content-length + "bytes", 0));
+                return(hash);
+            } else {
+                std.log("Will cache POST for: " + req.http.host + req.url);
+                set req.http.X-Body-Len = bodyaccess.len_req_body();
+                return(hash);
+            }
+        }
+
+        # Only cache GET and HEAD requests (pass through POST requests).
+        if (req.method != "GET" && req.method != "HEAD") {
+            return (pass);
+        }
+
+        # Normalize the header, remove the port (in case you're testing this on various TCP ports)
+        set req.http.Host = regsub(req.http.Host, ":[0-9]+", "");
+
+        # Remove the proxy header (see https://httpoxy.org/#mitigate-varnish)
+        unset req.http.proxy;
+
+        # Unset basic-auth header.  Allows caching from behind a basic-auth proxy.
+        unset req.http.Authorization;
+
+        # Normalize the query arguments
+        set req.url = std.querysort(req.url);
+
+        # Add an X-Forwarded-For header with the client IP address.
+        if (req.restarts == 0) {
+            if (req.http.X-Forwarded-For) {
+                set req.http.X-Forwarded-For = req.http.X-Forwarded-For + ", " + client.ip;
+            }
+            else {
+                set req.http.X-Forwarded-For = client.ip;
+            }
+        }
+
+        # Pass through any administrative or AJAX-related paths.
+        if (req.url ~ "^/status\.php$" ||
+            req.url ~ "^/update\.php$" ||
+            req.url ~ "^/admin$" ||
+            req.url ~ "^/admin/.*$" ||
+            req.url ~ "^/flag/.*$" ||
+            req.url ~ "^.*/ajax/.*$" ||
+            req.url ~ "^.*/ahah/.*$" ||
+            req.url ~ "/statistics\.php$" ||
+            # Ads.txt sometimes has a Drupal managed redirect rule
+            req.url ~ "/ads.txt" ||
+            # Revive is an OSS ad server we include alongside Drupal in some cases
+            req.url ~ "^/revive/.*$" ||
+            # Sitemap ignores
+            req.url ~ "sitemap" ||
+            req.url ~ "^/arrowchat/.*$" ||
+            req.url ~ "^/system/files/.*$" ||
+            req.url ~ "^/googlenews\.xml$" ) {
+               return (pass);
+        }
+
+        # Some generic URL manipulation, useful for all templates that follow
+        # First remove the Google Analytics added parameters, useless for our backend
+        if (req.url ~ "(\?|&)(utm_source|utm_medium|utm_campaign|utm_content|gclid|cx|ie|cof|siteurl|mkt_tok)=") {
+            set req.url = regsuball(req.url, "&(utm_source|utm_medium|utm_campaign|utm_content|gclid|cx|ie|cof|siteurl|mkt_tok)=([A-z0-9_\-\.%25]+)", "");
+            set req.url = regsuball(req.url, "\?(utm_source|utm_medium|utm_campaign|utm_content|gclid|cx|ie|cof|siteurl|mkt_tok)=([A-z0-9_\-\.%25]+)", "?");
+            set req.url = regsub(req.url, "\?&", "?");
+            set req.url = regsub(req.url, "\?$", "");
+        }
+
+        # Remove the nocache query parameter and treat it as a regular request
+        # We have experienced flooding with this parameter and unix timestamps
+        if (req.url ~ "(\?|&)(nocache)=") {
+            set req.url = regsuball(req.url, "&(nocache)=([A-z0-9_\-\.%25]+)", "");
+            set req.url = regsuball(req.url, "\?(nocache)=([A-z0-9_\-\.%25]+)", "?");
+            set req.url = regsub(req.url, "\?&", "?");
+            set req.url = regsub(req.url, "\?$", "");
+        }
+
+        # Strip hash, server doesn't need it.
+        if (req.url ~ "\#") {
+            set req.url = regsub(req.url, "\#.*$", "");
+        }
+
+        # Strip a trailing ? if it exists
+        if (req.url ~ "\?$") {
+            set req.url = regsub(req.url, "\?$", "");
+        }
+
+        # Removing cookies for static content so Varnish caches these files.
+        # STATIC_FORMATS set in run.sh and replaced when container starts, used again in vcl_backend_response below
+        if (req.url ~ "(?i)\.({{ .Values.staticFormats }})(\?.*)?$") {
+            unset req.http.Cookie;
+            return (hash);
+        }
+
+        # Remove all cookies that Drupal doesn't need to know about. We explicitly
+        # list the ones that Drupal does need, the SESS and NO_CACHE. If, after
+        # running this code we find that either of these two cookies remains, we
+        # will pass as the page cannot be cached.
+        if (req.http.Cookie) {
+            # 1. Append a semi-colon to the front of the cookie string.
+            # 2. Remove all spaces that appear after semi-colons.
+            # 3. Match the cookies we want to keep, adding the space we removed
+            #    previously back. (\1) is first matching group in the regsuball.
+            # 4. Remove all other cookies, identifying them by the fact that they have
+            #    no space after the preceding semi-colon.
+            # 5. Remove all spaces and semi-colons from the beginning and end of the
+            #    cookie string.
+            set req.http.Cookie = ";" + req.http.Cookie;
+            set req.http.Cookie = regsuball(req.http.Cookie, "; +", ";");
+            set req.http.Cookie = regsuball(req.http.Cookie, ";(SESS[a-z0-9]+|SSESS[a-z0-9]+|NO_CACHE|XDEBUG_SESSION)=", "; \1=");
+            set req.http.Cookie = regsuball(req.http.Cookie, ";[^ ][^;]*", "");
+            set req.http.Cookie = regsuball(req.http.Cookie, "^[; ]+|[; ]+$", "");
+            if (req.http.Cookie == "") {
+                # If there are no remaining cookies, remove the cookie header. If there
+                # aren't any cookie headers, Varnish's default behavior will be to cache
+                # the page.
+                unset req.http.Cookie;
+            }
+            else {
+                # If there is any cookies left (a session or NO_CACHE cookie), do not
+                # cache the page. Pass it on to backend directly.
+                return (pass);
+            }
+        }
+    }
+
+    # Set a header to track a cache HITs and MISSes.
+    sub vcl_deliver {
+        # Remove ban-lurker friendly custom headers when delivering to client.
+        unset resp.http.X-Url;
+        unset resp.http.X-Host;
+
+        if (obj.hits > 0) {
+            set resp.http.Varnish-Cache = "HIT";
+        }
+        else {
+            set resp.http.Varnish-Cache = "MISS";
+        }
+
+        # Please note that obj.hits behaviour changed in 4.0, now it counts per objecthead, not per object
+        # and obj.hits may not be reset in some cases where bans are in use. See bug 1492 for details.
+        # So take hits with a grain of salt
+        set resp.http.X-Cache-Hits = obj.hits;
+
+        # To make live debugging a little easer, output the varnish hostname
+        set resp.http.X-Served-By = server.hostname;
+
+        # Remove all headers with unnecessary info disclosure
+        unset resp.http.Link;
+        unset resp.http.Server;
+        unset resp.http.Via;
+        unset resp.http.X-Varnish;
+        unset resp.http.X-Generator;
+        unset resp.http.X-Powered-By;
+        unset resp.http.X-Varnish-Secret;
+
+        # Very important to disable cache tags headers
+        # These will be VERY large and it's unlikely your other
+        # reverse proxies will accept them.
+        unset resp.http.Cache-Tags;
+
+        # Drupal cache headers
+        unset resp.http.X-Drupal-Cache;
+        unset resp.http.X-Drupal-Cache-Contexts;
+        unset resp.http.X-Drupal-Cache-Tags;
+        unset resp.http.X-Drupal-Dynamic-Cache;
+
+        return (deliver);
+    }
+
+    sub vcl_purge {
+      # Only handle actual PURGE HTTP methods, everything else is discarded
+      if (req.method != "PURGE") {
+        # restart request
+        set req.http.X-Purge = "Yes";
+        return(restart);
+      }
+    }
+
+    sub vcl_synth {
+      if (resp.status == 720) {
+        # We use this special error status 720 to force redirects with 301 (permanent) redirects
+        # To use this, call the following from anywhere in vcl_recv: return (synth(720, "http://host/new.html"));
+        set resp.http.Location = resp.reason;
+        set resp.status = 301;
+        return (deliver);
+      } elseif (resp.status == 721) {
+        # And we use error status 721 to force redirects with a 302 (temporary) redirect
+        # To use this, call the following from anywhere in vcl_recv: return (synth(721, "http://host/new.html"));
+        set resp.http.Location = resp.reason;
+        set resp.status = 302;
+        return (deliver);
+      }
+      return (deliver);
+    }
+
+    # Instruct Varnish what to do in the case of certain backend responses (beresp).
+    sub vcl_backend_response {
+        # Add the secret as a header so that we can later authorize ban requests.
+        set beresp.http.X-Varnish-Secret = {{ .Values.secret | quote }};
+
+        # change Cache Control header for graphql request
+        # see https://stackoverflow.com/a/64832557/1837486
+        if (bereq.method == "POST" && bereq.url == "/graphql" && bereq.http.content-type ~ "application/json") {
+            // avoiding cookies set, if not, cache does not work
+            unset beresp.http.cookie;
+            unset beresp.http.Set-Cookie;
+
+            set beresp.ttl = 1d;
+            set beresp.http.Cache-Control = "public, max-age=86400";
+
+            return (deliver);
+        }
+
+        # Cache aggregated assets for an hour. This is necessary for 10.1 and onward.
+        if (bereq.url ~ "^/sites/default/assets/") {
+            set beresp.ttl = 1h;
+            set beresp.http.Cache-Control = "public, max-age=3600";
+        }
+
+        # Set ban-lurker friendly custom headers.
+        set beresp.http.X-Url = bereq.url;
+        set beresp.http.X-Host = bereq.http.host;
+
+        # Cache 403s, 404s, 302s and 301s with a short lifetime to protect the backend.
+        # Add a 'Saint-Mode' header for debugging.
+        if (
+          beresp.status == 301 ||
+          beresp.status == 302 ||
+          beresp.status == 403 ||
+          beresp.status == 404 ||
+          beresp.status == 499 ||
+          beresp.status == 500 ) {
+            unset beresp.http.Vary;
+            unset beresp.http.Surrogate-control;
+            set beresp.uncacheable = false;
+            unset beresp.http.Cache-Control;
+            set beresp.http.Saint-Mode = "Varnish";
+            set beresp.ttl = 30s;
+        }
+
+        # Cache statistics plus module endpoint
+        if (bereq.url ~ "^/statistics-ajax") {
+            unset beresp.http.cookie;
+            unset beresp.http.Set-Cookie;
+            set beresp.http.Cache-Control = "max-age=60, public";
+            set beresp.ttl = 60s;
+        }
+
+        # Don't cache 500 responses.  Grace should help avoid overloading backends here, and we don't want
+        # responses with grace time left to output a 500 on a temporary issue.
+        if (beresp.status > 500) {
+            return (abandon);
+        }
+
+        # Don't allow static files to set cookies.
+        # (?i) denotes case insensitive in PCRE (perl compatible regular expressions).
+        # This list of extensions appears twice, once here and again in vcl_recv so
+        # we're using an environment variable from run.sh
+        if (bereq.url ~ "(?i)\.({{ .Values.staticFormats }})(\?.*)?$") {
+            unset beresp.http.set-cookie;
+        }
+
+        # Grace in Varnish 4 means cached content will be held a little over it's TTL, the grace period, and the first client to request it
+        # while the grace period exists triggers a backend request to update it in the background.  So everything is hitting
+        # cache most of the time, but they're still triggering updates to the cached versions.
+        # Check https://kly.no/posts/2015_09_25_Magic_Grace.html
+        set beresp.grace = 1h;
+        # Keep is a newer value that holds on to objects in cache in an effort to get a potential 304 and save work.
+        # https://varnish-cache.org/docs/6.0/users-guide/vcl-grace.html
+        set beresp.keep = 2m;
+
+        # Add the secret as a header so that we can later authorize ban requests.
+        set beresp.http.X-Varnish-Secret = {{ .Values.secret | quote }};
+    }
