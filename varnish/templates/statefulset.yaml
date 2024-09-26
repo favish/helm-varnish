@@ -5,20 +5,20 @@
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: varnish
+  name: {{ template "templ.name" . }}
 spec:
-  serviceName: "varnish-internal"
+  serviceName: {{ printf "%s-internal" (include "templ.name" .) }}
   replicas: {{ .Values.replicas }}
   selector:
     matchLabels:
-      service: "varnish"
+      service: {{ template "templ.name" . }}
   template:
     metadata:
       annotations:
         prometheus.io.scrape: "true"
         prometheus.io.port: "9131"
       labels:
-        service: "varnish"
+        service: {{ template "templ.name" . }}
     spec:
       terminationGracePeriodSeconds: 5
       initContainers:
@@ -48,7 +48,7 @@ spec:
         image: "{{.Values.image.repository}}:{{.Values.image.tag}}"
         args: ["-p", "http_resp_hdr_len=16k"]
         resources:
-{{ toYaml .Values.resources | indent 10 }}
+          {{- toYaml .Values.resources | nindent 10 }}
         env:
           - name: "ENABLE_PROMETHEUS_EXPORTER"
             value: "true"
@@ -63,6 +63,9 @@ spec:
           - name: "config"
             mountPath: "/etc/varnish/default.vcl"
             subPath: "default.vcl"
+        {{- with .Values.extraVolumeMounts }}
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
         ports:
           - containerPort: 80
           - containerPort: 9131
