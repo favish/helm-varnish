@@ -1,7 +1,7 @@
 kind: ConfigMap
 apiVersion: v1
 metadata:
-  name: default-varnish
+  name: {{ .Values.configMapName | default (printf "default-%s" (include "templ.name" .)) }}
 data:
   default.vcl: |-
     vcl 4.0;
