@@ -2,7 +2,18 @@ apiVersion: v1
 entries:
   varnish:
   - apiVersion: v1
-    created: 2024-09-28T02:01:37.572625562Z
+    created: 2024-12-05T05:48:05.251443839Z
+    description: Varnish for use in front of Drupal
+    digest: a3672d5640e33b3ebaf2d3661ff2bedbf56ec5ba79cec10942742b8cf5db3aa1
+    maintainers:
+    - email: dev@favish.com
+      name: Favish
+    name: varnish
+    urls:
+    - https://favish.github.io/helm-varnish/varnish-2.3.1.tgz
+    version: 2.3.1
+  - apiVersion: v1
+    created: 2024-12-05T05:48:05.250861289Z
     description: Varnish for use in front of Drupal
     digest: 5277a13c6cb5497666d31676e8fe77efe728fc3044c9d689cac28471691d8167
     maintainers:
@@ -13,7 +24,7 @@ entries:
     - https://favish.github.io/helm-varnish/varnish-2.3.0.tgz
     version: 2.3.0
   - apiVersion: v1
-    created: 2024-09-28T02:01:37.572207379Z
+    created: 2024-12-05T05:48:05.250355885Z
     description: Varnish for use in front of Drupal
     digest: 5b38be5ab043177edf0cf595c68540675e57d7ab44f27304e143ae13d8ddd5ab
     maintainers:
@@ -24,7 +35,7 @@ entries:
     - https://favish.github.io/helm-varnish/varnish-2.2.0.tgz
     version: 2.2.0
   - apiVersion: v1
-    created: 2024-09-28T02:01:37.571819227Z
+    created: 2024-12-05T05:48:05.249851582Z
     description: Varnish for use in front of Drupal
     digest: 5c3db705c6dd3269631478d849a1af4c96711f100d2defddf8a36a4e78637187
     maintainers:
@@ -35,7 +46,7 @@ entries:
     - https://favish.github.io/helm-varnish/varnish-2.1.1.tgz
     version: 2.1.1
   - apiVersion: v1
-    created: 2024-09-28T02:01:37.571460216Z
+    created: 2024-12-05T05:48:05.24933926Z
     description: Varnish for use in front of Drupal
     digest: f3147dff9faf227d98b94ce769596f6322279b28d08c2944c6c91a7273faded5
     maintainers:
@@ -46,7 +57,7 @@ entries:
     - https://favish.github.io/helm-varnish/varnish-2.1.0.tgz
     version: 2.1.0
   - apiVersion: v1
-    created: 2024-09-28T02:01:37.571089367Z
+    created: 2024-12-05T05:48:05.248719906Z
     description: Varnish for use in front of Drupal
     digest: a37c77466b0a0e80c967390ec4bfbbd89b2af5c1e7a27491975f558533219d6f
     maintainers:
@@ -57,7 +68,7 @@ entries:
     - https://favish.github.io/helm-varnish/varnish-2.0.0.tgz
     version: 2.0.0
   - apiVersion: v1
-    created: 2024-09-28T02:01:37.570730088Z
+    created: 2024-12-05T05:48:05.247804205Z
     description: Varnish for use in front of Drupal
     digest: 08b1f165901307ac8845fef15f104c56811883895ed18a99432be378221ad093
     maintainers:
@@ -68,7 +79,7 @@ entries:
     - https://favish.github.io/helm-varnish/varnish-1.0.6.tgz
     version: 1.0.6
   - apiVersion: v1
-    created: 2024-09-28T02:01:37.570371569Z
+    created: 2024-12-05T05:48:05.247169Z
     description: Varnish for use in front of Drupal
     digest: 9d27411bded4b98207bba9e229e4ba2ff6686d09bfe24becb042fa1d253bcb15
     maintainers:
@@ -79,7 +90,7 @@ entries:
     - https://favish.github.io/helm-varnish/varnish-1.0.5.tgz
     version: 1.0.5
   - apiVersion: v1
-    created: 2024-09-28T02:01:37.569990973Z
+    created: 2024-12-05T05:48:05.246745514Z
     description: Varnish for use in front of Drupal
     digest: 606466a50013eca2ca157eefe4938b419ee67f5a78cdf326c6d7cb5bc9b41a83
     maintainers:
@@ -90,7 +101,7 @@ entries:
     - https://favish.github.io/helm-varnish/varnish-1.0.4.tgz
     version: 1.0.4
   - apiVersion: v1
-    created: 2024-09-28T02:01:37.569629937Z
+    created: 2024-12-05T05:48:05.246231873Z
     description: Varnish for use in front of Drupal
     digest: fe3549d50513fa50460eb646006322204f66dae5f622a777c38e682189e63324
     maintainers:
@@ -101,7 +112,7 @@ entries:
     - https://favish.github.io/helm-varnish/varnish-1.0.3.tgz
     version: 1.0.3
   - apiVersion: v1
-    created: 2024-09-28T02:01:37.569250837Z
+    created: 2024-12-05T05:48:05.245663725Z
     description: Varnish for use in front of Drupal
     digest: ca352a0d0a06852c64a65df4a45d01a37197bbe1e072e1036ae9c518f641b58d
     maintainers:
@@ -112,7 +123,7 @@ entries:
     - https://favish.github.io/helm-varnish/varnish-1.0.2.tgz
     version: 1.0.2
   - apiVersion: v1
-    created: 2024-09-28T02:01:37.568101625Z
+    created: 2024-12-05T05:48:05.245234293Z
     description: Varnish for use in front of Drupal
     digest: d7861f7a27d71ee194fb1f6915e094e3ea07d27753872f9bf6a3681634339bcd
     maintainers:
@@ -123,7 +134,7 @@ entries:
     - https://favish.github.io/helm-varnish/varnish-1.0.1.tgz
     version: 1.0.1
   - apiVersion: v1
-    created: 2024-09-28T02:01:37.567689438Z
+    created: 2024-12-05T05:48:05.244781671Z
     description: Varnish for use in front of Drupal
     digest: a2742dc7c482cac8e308110f4123b6f5edf9c702bd5fe1c331f85f2015fbd6ab
     maintainers:
@@ -133,4 +144,4 @@ entries:
     urls:
     - https://favish.github.io/helm-varnish/varnish-1.0.0.tgz
     version: 1.0.0
-generated: 2024-09-28T02:01:37.567119607Z
+generated: 2024-12-05T05:48:05.244170457Z
