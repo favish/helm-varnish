@@ -78,7 +78,7 @@ spec:
           path: "/sys"
       - name: "secret"
         secret:
-          secretName: "varnish-secret"
+          secretName: {{ .Values.customSecretName | default (printf "default-%s-secret" (include "templ.name" .)) }}
       - name: "config"
         configMap:
-          name: {{ .Values.configMapName }}
+          name: {{ .Values.configMapName | default (printf "default-%s-configmap" (include "templ.name" .)) }}

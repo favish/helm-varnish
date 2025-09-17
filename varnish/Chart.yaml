@@ -4,6 +4,4 @@ description: Varnish for use in front of Drupal
 maintainers:
 - email: dev@favish.com
   name: Favish
-# If you're testing locally, you'll need to add the version to this.  It's currently added by CI via circle-create-new-version.sh
-# ie: version: 2.0.0-alpha
-# version: 2.3.0
+version: 2.3.2
