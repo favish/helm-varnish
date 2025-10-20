@@ -9,6 +9,10 @@ metadata:
   name: {{ printf "%s-internal" (include "templ.name" .) }}
   labels:
     chart: "{{ .Chart.Name }}-{{ .Chart.Version }}"
+  {{- with .Values.serviceInternal.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
 spec:
   ports:
   - port: 80

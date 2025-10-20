@@ -4,6 +4,8 @@ backend:
 image:
   repository: "favish/varnish"
   tag: "2.0.0"
+serviceInternal:
+  annotations: {}
 malloc: 100M
 replicas: 2
 resources:
